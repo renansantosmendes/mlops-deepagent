@@ -91,8 +91,15 @@ def detect_data_drift(reference_path: str = "") -> str:
         return "ERRO: nenhum dado coletado ainda."
     current = pd.read_parquet(state["raw_data_path"])
 
+    # Limpa o reference_path de strings vazias, aspas, etc.
+    if reference_path:
+        reference_path = reference_path.strip().strip('"').strip("'").strip()
+    
     if not reference_path:
         reference_path = state.get("baseline_data_path", "")
+        if reference_path:
+            reference_path = reference_path.strip().strip('"').strip("'").strip()
+    
     if not reference_path:
         # Sem referência: salva o dataset atual como baseline para os próximos ciclos.
         baseline = artifact_path("baseline.parquet")

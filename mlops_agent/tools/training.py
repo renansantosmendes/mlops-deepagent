@@ -2,12 +2,15 @@
 e AutoML (FLAML) para seleção de modelo + hiperparâmetros."""
 
 import json
+import logging
 import time
 
 import joblib
 import numpy as np
 
 from .state import artifact_path, load_state, save_state
+
+logger = logging.getLogger(__name__)
 
 EXPERIMENT_NAME = "mlops-deepagent"
 
@@ -24,9 +27,12 @@ def analyze_training_history(max_runs: int = 30) -> str:
     """
     import mlflow
 
+    logger.info("📊 Analisando histórico de treinamentos no MLflow...")
+    
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(EXPERIMENT_NAME)
     if exp is None:
+        logger.info("🆕 Nenhum histórico encontrado (primeiro ciclo)")
         return (
             "Nenhum histórico encontrado (primeiro ciclo). Recomendação: usar AutoML com "
             "estimadores padrão e budget de ~60s; não há baseline a bater."
@@ -90,8 +96,11 @@ def run_automl_training(time_budget_seconds: int = 60, estimator_list: str = "")
     import mlflow
     from flaml import AutoML
 
+    logger.info("🤖 Iniciando treinamento AutoML (FLAML)...")
+    
     state = load_state()
     if "preprocessor_path" not in state:
+        logger.error("❌ Erro: dados ainda não processados")
         return "ERRO: dados ainda não processados. Rode process_data primeiro."
 
     X_train = np.load(artifact_path("X_train.npy"))
@@ -100,6 +109,10 @@ def run_automl_training(time_budget_seconds: int = 60, estimator_list: str = "")
     metric = "roc_auc" if task == "classification" and len(np.unique(y_train)) == 2 else (
         "macro_f1" if task == "classification" else "r2"
     )
+    
+    logger.info(f"📊 Task: {task} | Métrica: {metric}")
+    logger.info(f"⏱️  Budget de tempo: {time_budget_seconds}s")
+    logger.info(f"📈 Amostras de treino: {len(X_train)}")
 
     automl = AutoML()
     settings = {
@@ -111,16 +124,37 @@ def run_automl_training(time_budget_seconds: int = 60, estimator_list: str = "")
         "mlflow_logging": False,  # evita 1 run por trial; logamos só o run consolidado
     }
     estimators = [e.strip() for e in estimator_list.split(",") if e.strip()]
+    # Normalize estimator names to FLAML-supported aliases
     if estimators:
+        mapping = {
+            # common synonyms
+            "extras_trees": "extra_tree",
+            "extra_trees": "extra_tree",
+            "random_forest": "rf",
+            "xgb": "xgboost",
+        }
+        normalized = []
+        for est in estimators:
+            key = est.strip().lower()
+            if key in mapping:
+                normalized.append(mapping[key])
+            else:
+                normalized.append(key)
+        estimators = normalized
         settings["estimator_list"] = estimators
+        logger.info(f"🎯 Estimadores priorizados (normalizados): {estimators}")
 
     mlflow.set_experiment(EXPERIMENT_NAME)
     t0 = time.time()
+    logger.info("🔄 Executando AutoML...")
     with mlflow.start_run() as run:
         automl.fit(X_train=X_train, y_train=y_train, **settings)
+        logger.info(f"✅ AutoML concluído em {time.time() - t0:.1f}s")
         elapsed = time.time() - t0
         # FLAML retorna 1 - métrica como loss para métricas de maximização
         primary = 1 - automl.best_loss
+        logger.info(f"🏆 Melhor modelo: {automl.best_estimator}")
+        logger.info(f"📊 Métrica ({metric}): {primary:.4f}")
         mlflow.log_params(
             {
                 "best_estimator": automl.best_estimator,

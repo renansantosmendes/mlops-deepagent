@@ -9,8 +9,29 @@ Uso:
 """
 
 import sys
+import logging
+from pathlib import Path
+from datetime import datetime
 
+# Adiciona o diretório raiz ao path se executado diretamente
+if __name__ == "__main__":
+    root_dir = Path(__file__).parent.parent
+    if str(root_dir) not in sys.path:
+        sys.path.insert(0, str(root_dir))
+
+from dotenv import load_dotenv
 from deepagents import create_deep_agent
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
+
+# Configura logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 from mlops_agent.tools.data_analysis import analyze_data_quality, detect_data_drift
 from mlops_agent.tools.data_collection import (
@@ -109,27 +130,67 @@ ALL_TOOLS = (
 )
 
 
-def build_agent(model: str = "anthropic:claude-sonnet-4-5"):
+def build_agent(model: str = "openai:gpt-5-nano"):
     """Cria o deep agent orquestrador com os subagentes do ciclo de ML."""
-    return create_deep_agent(
+    logger.info("🤖 Inicializando MLOps Deep Agent...")
+    logger.info(f"📦 Modelo: {model}")
+    logger.info(f"🔧 Ferramentas disponíveis: {len(ALL_TOOLS)}")
+    logger.info(f"👥 Subagentes: {len([DATA_SUBAGENT, TRAINING_SUBAGENT, DEPLOY_SUBAGENT])} (Data, Training, Deploy)")
+    
+    agent = create_deep_agent(
         model=model,
         tools=ALL_TOOLS,  # orquestrador também pode agir direto, se preferir
         system_prompt=SYSTEM_PROMPT,
         subagents=[DATA_SUBAGENT, TRAINING_SUBAGENT, DEPLOY_SUBAGENT],
     )
+    
+    logger.info("✅ Agente inicializado com sucesso!\n")
+    return agent
 
 
 def main() -> None:
+    start_time = datetime.now()
+    
+    logger.info("="*80)
+    logger.info("🚀 MLOps Deep Agent - Iniciando execução")
+    logger.info("="*80)
+    
     task = (
         " ".join(sys.argv[1:])
         or "Rode o ciclo completo de ML usando o dataset demo de classificação."
     )
+    
+    logger.info(f"📋 Tarefa solicitada: {task}")
+    logger.info("="*80 + "\n")
+    
     agent = build_agent()
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": task}]},
-        config={"recursion_limit": 100},
-    )
-    print(result["messages"][-1].content)
+    
+    logger.info("▶️  Executando agente...\n")
+    logger.info("-"*80)
+    
+    try:
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": task}]},
+            config={"recursion_limit": 100},
+        )
+        
+        logger.info("-"*80)
+        logger.info("✅ Execução concluída com sucesso!\n")
+        logger.info("="*80)
+        logger.info("📊 RESULTADO FINAL")
+        logger.info("="*80)
+        print(result["messages"][-1].content)
+        
+        elapsed_time = datetime.now() - start_time
+        logger.info("\n" + "="*80)
+        logger.info(f"⏱️  Tempo total de execução: {elapsed_time}")
+        logger.info("="*80)
+        
+    except Exception as e:
+        logger.error("-"*80)
+        logger.error(f"❌ Erro durante a execução: {str(e)}")
+        logger.error("-"*80)
+        raise
 
 
 if __name__ == "__main__":

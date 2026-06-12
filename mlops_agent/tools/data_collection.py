@@ -1,8 +1,11 @@
 """Tools de coleta de dados: CSV/Parquet local, URL, SQL e dataset sintético de exemplo."""
 
+import logging
 import pandas as pd
 
 from .state import artifact_path, save_state
+
+logger = logging.getLogger(__name__)
 
 
 def collect_data_from_file(path: str, target_column: str) -> str:
@@ -12,7 +15,9 @@ def collect_data_from_file(path: str, target_column: str) -> str:
         path: Caminho do arquivo .csv ou .parquet.
         target_column: Nome da coluna alvo (label) para o problema de ML.
     """
+    logger.info(f"📁 Coletando dados do arquivo: {path}")
     df = pd.read_parquet(path) if path.endswith(".parquet") else pd.read_csv(path)
+    logger.info(f"✅ Arquivo carregado: {len(df)} linhas, {len(df.columns)} colunas")
     return _register_raw(df, target_column, source=f"file:{path}")
 
 
@@ -51,6 +56,9 @@ def generate_demo_dataset(n_samples: int = 2000, task: str = "classification") -
     """
     from sklearn.datasets import make_classification, make_regression
 
+    logger.info(f"🎲 Gerando dataset sintético: {task}")
+    logger.info(f"📈 Amostras: {n_samples}, Features: 12")
+    
     if task == "classification":
         X, y = make_classification(
             n_samples=n_samples, n_features=12, n_informative=6, random_state=42
@@ -59,16 +67,20 @@ def generate_demo_dataset(n_samples: int = 2000, task: str = "classification") -
         X, y = make_regression(n_samples=n_samples, n_features=12, noise=0.2, random_state=42)
     df = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
     df["target"] = y
+    
+    logger.info(f"✅ Dataset gerado com sucesso!")
     return _register_raw(df, "target", source=f"synthetic:{task}")
 
 
 def _register_raw(df: pd.DataFrame, target_column: str, source: str) -> str:
     if target_column not in df.columns:
+        logger.error(f"❌ Erro: coluna alvo '{target_column}' não existe")
         return (
             f"ERRO: coluna alvo '{target_column}' não existe. "
             f"Colunas disponíveis: {list(df.columns)}"
         )
     raw_path = artifact_path("raw.parquet")
+    logger.info(f"💾 Salvando dados brutos em: {raw_path}")
     df.to_parquet(raw_path)
     save_state(
         {

@@ -2,12 +2,15 @@
 verifica saúde e derruba o serviço."""
 
 import json
+import logging
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 from .state import load_state, save_state
+
+logger = logging.getLogger(__name__)
 
 SERVING_APP = "serving.app:app"
 
@@ -21,10 +24,15 @@ def deploy_model_api(port: int = 8000) -> str:
     Args:
         port: Porta da API (padrão 8000).
     """
+    logger.info("🚀 Iniciando deploy da API...")
+    
     state = load_state()
     if "full_pipeline_path" not in state:
+        logger.error("❌ Erro: nenhum modelo registrado")
         return "ERRO: nenhum modelo registrado. Rode register_model primeiro."
 
+    logger.info(f"🌐 Porta: {port}")
+    logger.info("🔧 Iniciando servidor uvicorn...")
     log = open("api_server.log", "w")
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", SERVING_APP, "--host", "0.0.0.0", "--port", str(port)],
@@ -32,9 +40,13 @@ def deploy_model_api(port: int = 8000) -> str:
         stderr=subprocess.STDOUT,
         cwd=str(Path.cwd()),
     )
+    logger.info("⏳ Aguardando inicialização do servidor...")
     time.sleep(4)
     if proc.poll() is not None:
+        logger.error("❌ Servidor caiu ao iniciar")
         return f"ERRO: servidor caiu ao iniciar. Veja api_server.log:\n{Path('api_server.log').read_text()[-1500:]}"
+    
+    logger.info(f"✅ API em execução! PID: {proc.pid}")
 
     save_state({"api_pid": proc.pid, "api_port": port, "api_url": f"http://localhost:{port}"})
     return (

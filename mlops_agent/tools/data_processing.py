@@ -1,11 +1,14 @@
 """Tool de processamento: limpeza, pipeline sklearn (imputação, encoding, scaling)
 e split treino/teste. O preprocessor é salvo para ser empacotado junto do modelo."""
 
+import logging
 import joblib
 import numpy as np
 import pandas as pd
 
 from .state import artifact_path, load_state, save_state
+
+logger = logging.getLogger(__name__)
 
 
 def process_data(test_size: float = 0.2, drop_columns: str = "") -> str:
@@ -25,16 +28,23 @@ def process_data(test_size: float = 0.2, drop_columns: str = "") -> str:
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+    logger.info("⚙️  Iniciando processamento de dados...")
+    
     state = load_state()
     if "raw_data_path" not in state:
+        logger.error("❌ Erro: nenhum dado coletado ainda")
         return "ERRO: nenhum dado coletado ainda."
     df = pd.read_parquet(state["raw_data_path"])
     target = state["target_column"]
+    logger.info(f"📄 Dataset carregado: {len(df)} linhas, {len(df.columns)} colunas")
 
     # Limpeza básica
+    logger.info("🧹 Aplicando limpeza básica...")
     df = df.drop_duplicates()
     to_drop = [c.strip() for c in drop_columns.split(",") if c.strip() and c.strip() in df.columns]
     const_cols = [c for c in df.columns if c != target and df[c].nunique(dropna=False) <= 1]
+    if to_drop or const_cols:
+        logger.info(f"🗑️  Removendo colunas: {to_drop + const_cols}")
     df = df.drop(columns=to_drop + const_cols)
     df = df.dropna(subset=[target])
 
@@ -43,6 +53,8 @@ def process_data(test_size: float = 0.2, drop_columns: str = "") -> str:
 
     num_cols = X.select_dtypes(include=np.number).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
+    logger.info(f"🔢 Colunas numéricas: {len(num_cols)}")
+    logger.info(f"🔤 Colunas categóricas: {len(cat_cols)}")
 
     preprocessor = ColumnTransformer(
         [
@@ -69,20 +81,26 @@ def process_data(test_size: float = 0.2, drop_columns: str = "") -> str:
 
     task = state.get("task_type", "classification")
     stratify = y if task == "classification" and y.value_counts().min() >= 2 else None
+    logger.info(f"✂️  Split train/test ({int((1-test_size)*100)}%/{int(test_size*100)}%)...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=42, stratify=stratify
     )
+    logger.info(f"📋 Train: {len(X_train)} | Test: {len(X_test)}")
 
+    logger.info("🔄 Aplicando transformações (imputação, encoding, scaling)...")
     Xtr = preprocessor.fit_transform(X_train)
     Xte = preprocessor.transform(X_test)
+    logger.info(f"✅ Features após encoding: {Xtr.shape[1]}")
 
     feature_names = list(preprocessor.get_feature_names_out())
+    logger.info("💾 Salvando dados processados...")
     np.save(artifact_path("X_train.npy"), Xtr)
     np.save(artifact_path("X_test.npy"), Xte)
     np.save(artifact_path("y_train.npy"), y_train.to_numpy())
     np.save(artifact_path("y_test.npy"), y_test.to_numpy())
     prep_path = artifact_path("preprocessor.joblib")
     joblib.dump(preprocessor, prep_path)
+    logger.info(f"✅ Processamento concluído com sucesso!")
 
     save_state(
         {
