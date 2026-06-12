@@ -1,6 +1,7 @@
 """Tool de registro: empacota preprocessor + modelo num pipeline sklearn e
 registra no MLflow Model Registry com versionamento e alias."""
 
+import os
 import joblib
 
 from .state import artifact_path, load_state, save_state
@@ -20,6 +21,10 @@ def register_model(model_name: str = "mlops-deepagent-model", alias: str = "cham
     import numpy as np
     import pandas as pd
     from sklearn.pipeline import Pipeline
+
+    _uri = os.getenv("MLFLOW_TRACKING_URI")
+    if _uri:
+        mlflow.set_tracking_uri(_uri)
 
     state = load_state()
     if not state.get("model_approved"):
