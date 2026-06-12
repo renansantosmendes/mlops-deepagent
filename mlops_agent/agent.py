@@ -45,6 +45,9 @@ from mlops_agent.tools.deployment import check_api_health, deploy_model_api, sto
 from mlops_agent.tools.evaluation import evaluate_model
 from mlops_agent.tools.registry import register_model
 from mlops_agent.tools.training import analyze_training_history, run_automl_training
+from mlops_agent.tools.environment import get_env_var
+
+from functools import wraps
 
 SYSTEM_PROMPT = """Você é um engenheiro de MLOps autônomo responsável pelo ciclo de vida
 completo de soluções de Machine Learning.
@@ -93,6 +96,7 @@ DATA_SUBAGENT = {
         analyze_data_quality,
         detect_data_drift,
         process_data,
+        get_env_var
     ],
 }
 
@@ -129,6 +133,20 @@ ALL_TOOLS = (
     DATA_SUBAGENT["tools"] + TRAINING_SUBAGENT["tools"] + DEPLOY_SUBAGENT["tools"]
 )
 
+def _wrap_tool_with_logging(func):
+    @wraps(func)
+    def _wrapper(*args, **kwargs):
+        try:
+            logger.info(f"🧭 Decisão do agent: escolhendo tool '{func.__name__}'")
+        except Exception:
+            pass
+        return func(*args, **kwargs)
+    return _wrapper
+
+def _logged_tools():
+    # Retorna a lista de tools com logging incorporado
+    return [_wrap_tool_with_logging(t) for t in ALL_TOOLS]
+
 
 def build_agent(model: str = "openai:gpt-5-nano"):
     """Cria o deep agent orquestrador com os subagentes do ciclo de ML."""
@@ -139,7 +157,7 @@ def build_agent(model: str = "openai:gpt-5-nano"):
     
     agent = create_deep_agent(
         model=model,
-        tools=ALL_TOOLS,  # orquestrador também pode agir direto, se preferir
+        tools=_logged_tools(),  # orquestrador também pode agir direto, se preferir
         system_prompt=SYSTEM_PROMPT,
         subagents=[DATA_SUBAGENT, TRAINING_SUBAGENT, DEPLOY_SUBAGENT],
     )

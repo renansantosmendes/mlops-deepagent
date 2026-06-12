@@ -1,9 +1,16 @@
 """Tools de coleta de dados: CSV/Parquet local, URL, SQL e dataset sintético de exemplo."""
 
 import logging
+import os
 import pandas as pd
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 from .state import artifact_path, save_state
+from .environment import get_env_var
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,18 @@ def collect_data_from_url(url: str, target_column: str) -> str:
         url: URL pública de um arquivo CSV.
         target_column: Nome da coluna alvo (label).
     """
+    # Expand environment variable placeholders like ${VAR} using helper
+    if isinstance(url, str) and url.startswith("${") and url.endswith("}"):
+        var_name = url[2:-1]
+        expanded = get_env_var(var_name, None)
+        if not expanded:
+            logger.error(
+                f"❌ Não foi possível expandir a URL de dados a partir do placeholder '{url}'."
+            )
+            raise FileNotFoundError(
+                f"URL de dados não encontrada para {var_name} (esperado em variável de ambiente)."
+            )
+        url = expanded
     df = pd.read_csv(url)
     return _register_raw(df, target_column, source=f"url:{url}")
 
